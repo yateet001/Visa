@@ -2,6 +2,20 @@
 import argparse, json, os, sys, tempfile, zipfile, requests, time
 from auth import get_token
 
+def log_system_resources(context=""):
+    """Log current system resource usage"""
+    try:
+        import psutil
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        print(f"🖥️ System Resources {context}:")
+        print(f"  Memory: {memory.percent}% used ({memory.available // 1024 // 1024} MB available)")
+        print(f"  Disk: {disk.percent}% used ({disk.free // 1024 // 1024 // 1024} GB free)")
+    except ImportError:
+        print(f"📊 System monitoring not available (psutil not installed)")
+    except Exception as e:
+        print(f"⚠️ Could not get system resources: {e}")
+
 def validate_pbip_structure(project_dir):
     """Validate that the PBIP project has the required structure"""
     required_files = []
@@ -199,16 +213,31 @@ def create_proper_pbix_from_pbip(pbip_project_path):
             pbix_zip.writestr("Metadata", metadata)
             print("📄 Added Metadata")
             
+            # Force flush to ensure all data is written
+            pbix_zip.flush = True
+            
             # 10. Add Report/StaticResources if they exist
             static_resources_dir = os.path.join(report_dir, "StaticResources")
             if os.path.exists(static_resources_dir):
+                print(f"📁 Processing StaticResources from: {static_resources_dir}")
+                file_count = 0
                 for root, dirs, files in os.walk(static_resources_dir):
+                    print(f"📂 Scanning directory: {root} ({len(files)} files)")
                     for file in files:
+                        file_count += 1
                         file_path = os.path.join(root, file)
                         arc_name = f"Report/{os.path.relpath(file_path, report_dir)}"
                         
+                        print(f"📄 Processing file {file_count}: {file}")
+                        
                         # Handle both text and binary files appropriately
                         try:
+                            # Check file size first to avoid memory issues
+                            file_size = os.path.getsize(file_path)
+                            if file_size > 10 * 1024 * 1024:  # 10MB limit
+                                print(f"⚠️ Skipping large file {file} ({file_size} bytes)")
+                                continue
+                            
                             # Try to read as text first for JSON/text files
                             if file.lower().endswith(('.json', '.txt', '.css', '.js')):
                                 with open(file_path, 'r', encoding='utf-8') as f:
@@ -219,9 +248,15 @@ def create_proper_pbix_from_pbip(pbip_project_path):
                                 with open(file_path, 'rb') as f:
                                     content = f.read()
                                 pbix_zip.writestr(arc_name, content)
-                            print(f"📄 Added {arc_name}")
+                            print(f"✅ Added {arc_name} ({file_size} bytes)")
                         except Exception as e:
-                            print(f"⚠️ Warning: Could not add {arc_name}: {e}")
+                            print(f"❌ Error adding {arc_name}: {e}")
+                            # Continue processing other files instead of failing completely
+                            continue
+                
+                print(f"📊 Processed {file_count} static resource files")
+            else:
+                print("📁 No StaticResources directory found")
         
         file_size = os.path.getsize(temp_pbix.name)
         print(f"✅ PBIX created successfully: {temp_pbix.name}")
@@ -487,6 +522,8 @@ def main():
     print('\n🔑 Getting token...')
     token = get_token(cfg['tenantId'], cfg['clientId'], cfg['clientSecret'])
     print('✅ Token acquired!')
+    
+    log_system_resources("before PBIX creation")
 
     pbix_file = None
     
@@ -502,16 +539,35 @@ def main():
         
         print('\n📦 Creating proper PBIX...')
         pbix_file = create_proper_pbix_from_pbip(args.pbix)
+        
+        log_system_resources("after PBIX creation")
 
         print(f'\n📤 Importing to Power BI...')
         
-        # Try temporary upload method first (recommended for all files)
-        result = import_pbix_with_temp_upload(token, workspace_id, pbix_file, report_name)
+        # Add timeout protection for the entire upload process
+        import signal
         
-        # If temp upload fails, try the direct methods
-        if not result:
-            print(f'\n🔄 Temp upload failed, trying direct methods...')
-            result = import_pbix_simple(token, workspace_id, pbix_file, report_name)
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Upload process timed out after 10 minutes")
+        
+        # Set 10 minute timeout for upload process
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(600)  # 10 minutes
+        
+        try:
+            # Try temporary upload method first (recommended for all files)
+            result = import_pbix_with_temp_upload(token, workspace_id, pbix_file, report_name)
+            
+            # If temp upload fails, try the direct methods
+            if not result:
+                print(f'\n🔄 Temp upload failed, trying direct methods...')
+                result = import_pbix_simple(token, workspace_id, pbix_file, report_name)
+        except TimeoutError as e:
+            print(f'\n⏰ Upload timed out: {e}')
+            raise Exception("Upload process timed out - check network connectivity and file size")
+        finally:
+            # Cancel the alarm
+            signal.alarm(0)
         
         print('\n🎉 SUCCESS! DEPLOYMENT COMPLETED! 🎉')
         print(f"📊 Report '{report_name}' deployed to '{workspace_name}'")
