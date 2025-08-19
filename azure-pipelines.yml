@@ -12,6 +12,11 @@ parameters:
   - dev
   - prod
 
+- name: pbipPath
+  displayName: "Path to PBIP Report"
+  type: string
+  default: "Visa/Demo Report/Demo Report.pbip"
+
 stages:
 - stage: Deploy
   displayName: "Deploy PBIP Report"
@@ -28,5 +33,5 @@ stages:
       displayName: 'Install dependencies'
 
     - script: |
-        python main.py --env ${{ parameters.targetEnv }} --pbix "$(Build.SourcesDirectory)/DemoReport.pbix"
+        python scripts/main.py --env ${{ parameters.targetEnv }} --pbix "$(Build.SourcesDirectory)/${{ parameters.pbipPath }}"
       displayName: 'Deploy PBIP Report'
