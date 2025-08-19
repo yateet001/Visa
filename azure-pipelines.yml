@@ -29,8 +29,15 @@ stages:
         addToPath: true
 
     - script: |
-        pip install requests
-      displayName: 'Install dependencies'
+        pip install requests psutil
+      displayName: 'Install Python dependencies'
+
+    - script: |
+        dotnet tool install -g PbiTools || echo "pbi-tools already installed"
+        echo "##vso[task.setvariable variable=TOOLPATH]$HOME/.dotnet/tools"
+        echo "Installed tools in: $HOME/.dotnet/tools"
+        "$HOME/.dotnet/tools/pbi-tools" --version || true
+      displayName: 'Install pbi-tools'
 
     # Add debugging to see what files exist
     - script: |
@@ -42,5 +49,7 @@ stages:
       displayName: 'Debug - List repository contents'
 
     - script: |
+        export PATH="$PATH:$(TOOLPATH)"
+        which pbi-tools || echo "pbi-tools not found in PATH, will use internal packer"
         python scripts/main.py --env ${{ parameters.targetEnv }} --pbix "$(Build.SourcesDirectory)/${{ parameters.pbixPath }}"
       displayName: 'Deploy PBIX Report'
