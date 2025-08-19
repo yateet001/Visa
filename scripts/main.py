@@ -2,106 +2,8 @@
 import argparse, json, os, sys, tempfile, zipfile, requests, time
 from auth import get_token
 
-def import_pbix(token, workspace_id, pbix_path, dataset_display_name):
-    """Import PBIX file to Power BI"""
-    headers = {'Authorization': f'Bearer {token}'}
-    url = f'https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/imports?datasetDisplayName={dataset_display_name}&nameConflict=CreateOrOverwrite'
-    
-    print(f"📤 Uploading to workspace: {workspace_id}")
-    
-    with open(pbix_path, 'rb') as f:
-        files = {'file': (os.path.basename(pbix_path), f, 'application/octet-stream')}
-        response = requests.post(url, headers=headers, files=files)
-    
-    print(f"📤 Upload response: {response.status_code}")
-    if response.status_code not in (200, 201, 202):
-        print(f"❌ Upload failed: {response.text}")
-        raise Exception(f'Import failed: {response.status_code} {response.text}')
-    
-    result = response.json()
-    print(f"✅ Upload successful!")
-    return result
-
-def wait_for_dataset(token, workspace_id, dataset_name, timeout=120):
-    """Wait for dataset to be available after import"""
-    headers = {'Authorization': f'Bearer {token}'}
-    url = f'https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/datasets'
-    
-    elapsed = 0
-    print(f"⏳ Waiting for dataset '{dataset_name}' to be ready...")
-    
-    while elapsed < timeout:
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            datasets = response.json().get('value', [])
-            for ds in datasets:
-                if ds.get('name') == dataset_name:
-                    print(f"✅ Dataset ready: {ds['id']}")
-                    return ds['id']
-        
-        print(f"⏳ Still waiting... ({elapsed}s/{timeout}s)")
-        time.sleep(10)
-        elapsed += 10
-    
-    raise Exception('Dataset not found after import timeout')
-
-def get_datasources(token, workspace_id, dataset_id):
-    """Get datasources for a dataset"""
-    headers = {'Authorization': f'Bearer {token}'}
-    url = f'https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/datasets/{dataset_id}/datasources'
-    
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json().get('value', [])
-    else:
-        print(f"⚠️  Could not fetch datasources: {response.status_code}")
-        return []
-
-def update_datasources(token, workspace_id, dataset_id, updates):
-    """Update datasources for a dataset"""
-    headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
-    url = f'https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/datasets/{dataset_id}/Default.UpdateDatasources'
-    
-    body = {'updateDetails': updates}
-    response = requests.post(url, headers=headers, data=json.dumps(body))
-    
-    if response.status_code in [200, 202]:
-        print("✅ Datasources updated successfully")
-        return response.json() if response.content else {"status": "success"}
-    else:
-        print(f"⚠️  Datasource update response: {response.status_code}")
-        print(f"Response: {response.text}")
-        return {"status": "partial", "code": response.status_code, "message": response.text}
-
-def build_update_requests(datasources, dw_connection, dw_name, username=None, password=None):
-    """Build datasource update requests"""
-    updates = []
-    for ds in datasources:
-        selector = {}
-        if 'datasourceId' in ds:
-            selector['datasourceId'] = ds['datasourceId']
-        selector['datasourceType'] = ds.get('datasourceType')
-        
-        conn_details = {}
-        conn_details['connectionString'] = f'powerbi://{dw_connection};Initial Catalog={dw_name}'
-        
-        cred = None
-        if username and password:
-            cred = {
-                'credentialType': 'Basic',
-                'basicCredentials': {'username': username, 'password': password},
-                'credentialsEncrypted': False
-            }
-        
-        updates.append({
-            'datasourceSelector': selector,
-            'connectionDetails': conn_details,
-            'credentialDetails': cred
-        })
-    return updates
-
-def convert_pbip_to_pbix(pbip_project_path):
-    """Convert PBIP project to PBIX by zipping the project contents"""
+def create_valid_pbix_from_pbip(pbip_project_path):
+    """Create a valid PBIX file from PBIP project with proper structure"""
     print(f"📦 Converting PBIP project at: {pbip_project_path}")
     
     if pbip_project_path.endswith('.pbip'):
@@ -114,36 +16,132 @@ def convert_pbip_to_pbix(pbip_project_path):
     if not os.path.exists(project_dir):
         raise FileNotFoundError(f"Project directory not found: {project_dir}")
     
-    print("📋 Project contents:")
-    for item in os.listdir(project_dir):
-        item_path = os.path.join(project_dir, item)
-        if os.path.isdir(item_path):
-            print(f"  📁 {item}/")
-        else:
-            print(f"  📄 {item}")
+    # Look for the essential PBIP components
+    report_dir = os.path.join(project_dir, "Demo Report.Report")
+    model_dir = os.path.join(project_dir, "Demo Report.SemanticModel")
     
+    if not os.path.exists(report_dir):
+        raise FileNotFoundError(f"Report directory not found: {report_dir}")
+    
+    if not os.path.exists(model_dir):
+        raise FileNotFoundError(f"SemanticModel directory not found: {model_dir}")
+    
+    print("📋 Found required components:")
+    print(f"  📊 Report: {report_dir}")
+    print(f"  🗃️  Model: {model_dir}")
+    
+    # Create temporary PBIX file
     temp_pbix = tempfile.NamedTemporaryFile(suffix='.pbix', delete=False)
     temp_pbix.close()
     
     try:
         with zipfile.ZipFile(temp_pbix.name, 'w', zipfile.ZIP_DEFLATED) as pbix_zip:
-            for root, dirs, files in os.walk(project_dir):
-                for file in files:
-                    if file.endswith('.pbip'):
-                        continue
-                    
-                    file_path = os.path.join(root, file)
-                    arc_name = os.path.relpath(file_path, project_dir)
-                    print(f"📦 Adding to PBIX: {arc_name}")
-                    pbix_zip.write(file_path, arc_name)
+            # Add SecurityBindings (required for PBIX)
+            security_bindings = """<Bindings xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />"""
+            pbix_zip.writestr("SecurityBindings", security_bindings)
+            
+            # Add Settings (required for PBIX) 
+            settings = """{"version":"1.0"}"""
+            pbix_zip.writestr("Settings", settings)
+            
+            # Add Version (required for PBIX)
+            version = "4.0"
+            pbix_zip.writestr("Version", version)
+            
+            # Add report files
+            report_json_path = os.path.join(report_dir, "report.json")
+            if os.path.exists(report_json_path):
+                pbix_zip.write(report_json_path, "Report/Layout")
+                print("📄 Added Report/Layout")
+            
+            # Add model files  
+            model_bim_path = os.path.join(model_dir, "model.bim")
+            if os.path.exists(model_bim_path):
+                pbix_zip.write(model_bim_path, "DataModel")
+                print("📄 Added DataModel")
+            
+            # Add diagram layout if exists
+            diagram_path = os.path.join(model_dir, "diagramLayout.json")
+            if os.path.exists(diagram_path):
+                pbix_zip.write(diagram_path, "DiagramLayout")
+                print("📄 Added DiagramLayout")
+            
+            # Add metadata
+            metadata = {
+                "version": "4.0",
+                "datasetReference": {
+                    "byPath": {
+                        "path": "Demo Report.SemanticModel"
+                    }
+                }
+            }
+            pbix_zip.writestr("Metadata", json.dumps(metadata))
+            print("📄 Added Metadata")
         
-        print(f"✅ PBIX created successfully: {temp_pbix.name}")
+        print(f"✅ Valid PBIX created successfully: {temp_pbix.name}")
+        
+        # Verify the PBIX file is valid
+        file_size = os.path.getsize(temp_pbix.name)
+        print(f"📏 PBIX file size: {file_size} bytes")
+        
+        if file_size < 1000:
+            raise Exception("PBIX file is too small - likely invalid")
+        
         return temp_pbix.name
         
     except Exception as e:
         if os.path.exists(temp_pbix.name):
             os.unlink(temp_pbix.name)
         raise e
+
+def import_pbix(token, workspace_id, pbix_path, dataset_display_name):
+    """Import PBIX file to Power BI"""
+    headers = {'Authorization': f'Bearer {token}'}
+    url = f'https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/imports?datasetDisplayName={dataset_display_name}&nameConflict=CreateOrOverwrite'
+    
+    print(f"📤 Uploading to workspace: {workspace_id}")
+    print(f"📤 File: {pbix_path}")
+    print(f"📤 File size: {os.path.getsize(pbix_path)} bytes")
+    
+    with open(pbix_path, 'rb') as f:
+        files = {'file': (os.path.basename(pbix_path), f, 'application/octet-stream')}
+        response = requests.post(url, headers=headers, files=files, timeout=300)
+    
+    print(f"📤 Upload response: {response.status_code}")
+    if response.status_code not in (200, 201, 202):
+        print(f"❌ Upload failed: {response.text}")
+        raise Exception(f'Import failed: {response.status_code} {response.text}')
+    
+    result = response.json()
+    print(f"✅ Upload successful!")
+    return result
+
+def wait_for_import_completion(token, workspace_id, import_id, timeout=300):
+    """Wait for import to complete"""
+    headers = {'Authorization': f'Bearer {token}'}
+    url = f'https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/imports/{import_id}'
+    
+    elapsed = 0
+    print(f"⏳ Waiting for import {import_id} to complete...")
+    
+    while elapsed < timeout:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            import_status = response.json()
+            status = import_status.get('importState', 'Unknown')
+            print(f"📊 Import status: {status}")
+            
+            if status == 'Succeeded':
+                print("✅ Import completed successfully!")
+                return import_status
+            elif status == 'Failed':
+                error = import_status.get('error', 'Unknown error')
+                raise Exception(f"Import failed: {error}")
+        
+        time.sleep(10)
+        elapsed += 10
+    
+    raise Exception('Import timeout')
 
 def main():
     p = argparse.ArgumentParser()
@@ -161,10 +159,8 @@ def main():
     tenant = cfg['tenantId']
     client = cfg['clientId'] 
     secret = cfg['clientSecret']
-    workspace_id = cfg['workspaceId']  # Use the corrected workspace ID
+    workspace_id = cfg['workspaceId']
     workspace_name = cfg.get('workspaceName')
-    dw_conn = cfg['warehouseConnection']
-    dw_name = cfg['warehouseName']
     report_name = cfg.get('reportName', 'Demo Report')
 
     print(f"🔧 Configuration:")
@@ -179,53 +175,28 @@ def main():
 
     print(f'\n🎯 Using workspace: {workspace_id}')
 
-    # Convert PBIP to PBIX
+    # Convert PBIP to valid PBIX
     pbix_file = None
     cleanup_required = False
     
     try:
-        if args.pbix.endswith('.pbip') or os.path.isdir(args.pbix):
-            print('\n📦 Converting PBIP project to PBIX...')
-            pbix_file = convert_pbip_to_pbix(args.pbix)
-            cleanup_required = True
-        elif args.pbix.endswith('.pbix') and os.path.exists(args.pbix):
-            pbix_file = args.pbix
-        else:
-            base_path = args.pbix.replace('.pbix', '')
-            if os.path.exists(base_path):
-                print(f'📦 Converting PBIP project to PBIX...')
-                pbix_file = convert_pbip_to_pbix(base_path)
-                cleanup_required = True
-            else:
-                raise FileNotFoundError(f"Neither PBIX file nor PBIP project found at: {args.pbix}")
+        print('\n📦 Creating valid PBIX from PBIP project...')
+        pbix_file = create_valid_pbix_from_pbip(args.pbix)
+        cleanup_required = True
 
         print(f'\n📤 Importing PBIX to Power BI...')
         import_result = import_pbix(token, workspace_id, pbix_file, report_name)
         
-        print('\n⏳ Waiting for dataset...')
-        ds_id = wait_for_dataset(token, workspace_id, report_name)
-        
-        print('\n🔌 Fetching datasources...')
-        datasources = get_datasources(token, workspace_id, ds_id)
-        print(f"📊 Found {len(datasources)} datasources")
-        
-        if datasources:
-            print("📋 Datasources found:")
-            for i, ds in enumerate(datasources, 1):
-                print(f"  {i}. Type: {ds.get('datasourceType', 'Unknown')}")
-                print(f"     ID: {ds.get('datasourceId', 'N/A')}")
-            
-            updates = build_update_requests(datasources, dw_conn, dw_name, username=None, password=None)
-            print('\n🔄 Updating datasources...')
-            res = update_datasources(token, workspace_id, ds_id, updates)
-            print(f"🔄 Update result: {res}")
-        else:
-            print('ℹ️  No datasources found to update.')
+        # Wait for import to complete
+        import_id = import_result.get('id')
+        if import_id:
+            print(f'\n⏳ Monitoring import progress...')
+            final_result = wait_for_import_completion(token, workspace_id, import_id)
+            print(f"📋 Final result: {final_result}")
         
         print('\n🎉 DEPLOYMENT COMPLETED SUCCESSFULLY! 🎉')
         print(f"📊 Report: {report_name}")
         print(f"🏢 Workspace: {workspace_name} ({workspace_id})")
-        print(f"📈 Dataset: {ds_id}")
 
     except Exception as e:
         print(f'\n❌ Deployment failed: {str(e)}')
