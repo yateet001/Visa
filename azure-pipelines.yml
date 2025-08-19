@@ -28,9 +28,20 @@ stages:
         versionSpec: '3.10'
         addToPath: true
 
+    - task: UseDotNet@2
+      displayName: 'Install .NET SDK (for pbi-tools)'
+      inputs:
+        packageType: 'sdk'
+        version: '8.0.x'
+        installationPath: $(Agent.ToolsDirectory)/dotnet
+
     - script: |
+        dotnet tool install --global PbiTools
+        echo "##vso[task.prependpath]$HOME/.dotnet/tools"
+        pbi-tools --version || true
+        python -m pip install --upgrade pip
         pip install requests
-      displayName: 'Install dependencies'
+      displayName: 'Install dependencies (pbi-tools, requests)'
 
     # Add debugging to see what files exist
     - script: |
@@ -43,4 +54,4 @@ stages:
 
     - script: |
         python scripts/main.py --env ${{ parameters.targetEnv }} --pbix "$(Build.SourcesDirectory)/${{ parameters.pbixPath }}"
-      displayName: 'Deploy PBIX Report'
+      displayName: 'Compile PBIP and Deploy PBIX Report'
