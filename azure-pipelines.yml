@@ -28,6 +28,13 @@ stages:
         versionSpec: '3.10'
         addToPath: true
 
+    # Ensure .NET SDK available for installing/running pbi-tools
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '6.x'
+      displayName: 'Install .NET SDK'
+
     - script: |
         pip install requests psutil
       displayName: 'Install Python dependencies'
@@ -50,6 +57,13 @@ stages:
 
     - script: |
         export PATH="$PATH:$(TOOLPATH)"
-        which pbi-tools || echo "pbi-tools not found in PATH, will use internal packer"
-        python scripts/main.py --env ${{ parameters.targetEnv }} --pbix "$(Build.SourcesDirectory)/${{ parameters.pbixPath }}"
+        which pbi-tools || (echo "pbi-tools not found in PATH" && exit 1)
+        pbi-tools build "$(Build.SourcesDirectory)/${{ parameters.pbixPath }}" --out "$(Build.ArtifactStagingDirectory)/report.pbix"
+        echo "Built PBIX size:" && ls -lh "$(Build.ArtifactStagingDirectory)/report.pbix"
+      displayName: 'Build PBIX with pbi-tools'
+
+    - script: |
+        export PATH="$PATH:$(TOOLPATH)"
+        which pbi-tools || echo "pbi-tools not found in PATH, using already-built PBIX"
+        python scripts/main.py --env ${{ parameters.targetEnv }} --pbix "$(Build.ArtifactStagingDirectory)/report.pbix"
       displayName: 'Deploy PBIX Report'
