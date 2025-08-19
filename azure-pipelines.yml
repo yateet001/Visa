@@ -12,14 +12,14 @@ parameters:
   - dev
   - prod
 
-- name: pbipPath
-  displayName: "Path to PBIP Report"
+- name: pbixPath
+  displayName: "Path to PBIX Report"
   type: string
-  default: "Demo Report/Demo Report.pbip"  # Corrected path
+  default: "Demo Report"  # Just the folder name, script will handle the rest
 
 stages:
 - stage: Deploy
-  displayName: "Deploy PBIP Report"
+  displayName: "Deploy PBIX Report"
   jobs:
   - job: DeployJob
     steps:
@@ -32,6 +32,15 @@ stages:
         pip install requests
       displayName: 'Install dependencies'
 
+    # Add debugging to see what files exist
     - script: |
-        python scripts/main.py --env ${{ parameters.targetEnv }} --pbip "$(Build.SourcesDirectory)/${{ parameters.pbipPath }}"
-      displayName: 'Deploy PBIP Report'
+        echo "Repository contents:"
+        ls -la "$(Build.SourcesDirectory)/"
+        echo ""
+        echo "Demo Report folder contents:"
+        ls -la "$(Build.SourcesDirectory)/Demo Report/" || echo "Demo Report folder not found"
+      displayName: 'Debug - List repository contents'
+
+    - script: |
+        python scripts/main.py --env ${{ parameters.targetEnv }} --pbix "$(Build.SourcesDirectory)/${{ parameters.pbixPath }}"
+      displayName: 'Deploy PBIX Report'
