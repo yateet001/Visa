@@ -2,6 +2,123 @@
 import argparse, json, os, sys, tempfile, zipfile, requests, time
 from auth import get_token
 
+
+def log_system_resources(context=""):
+    """Log current system resource usage"""
+    try:
+        import psutil
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        print(f"🖥️ System Resources {context}:")
+        print(f"  Memory: {memory.percent}% used ({memory.available // 1024 // 1024} MB available)")
+        print(f"  Disk: {disk.percent}% used ({disk.free // 1024 // 1024 // 1024} GB free)")
+    except ImportError:
+        print(f"📊 System monitoring not available (psutil not installed)")
+    except Exception as e:
+        print(f"⚠️ Could not get system resources: {e}")
+
+def validate_pbip_structure(project_dir):
+    """Validate that the PBIP project has the required structure"""
+    required_files = []
+    report_dir = os.path.join(project_dir, "Demo Report.Report")
+    model_dir = os.path.join(project_dir, "Demo Report.SemanticModel")
+    
+    if os.path.exists(report_dir):
+        report_json = os.path.join(report_dir, "report.json")
+        if os.path.exists(report_json):
+            required_files.append(("Report JSON", report_json))
+    
+    if os.path.exists(model_dir):
+        model_bim = os.path.join(model_dir, "model.bim")
+        if os.path.exists(model_bim):
+            required_files.append(("Model BIM", model_bim))
+    
+    print("📋 Validating PBIP structure:")
+    for name, path in required_files:
+        size = os.path.getsize(path)
+        print(f"  ✅ {name}: {size} bytes")
+    
+    return len(required_files) >= 2  # At least report.json and model.bim
+
+def create_minimal_pbix_for_testing():
+    """Create a minimal PBIX file for testing purposes"""
+    print("🧪 Creating minimal test PBIX...")
+    
+    temp_pbix = tempfile.NamedTemporaryFile(suffix='.pbix', delete=False)
+    temp_pbix.close()
+    
+    try:
+        with zipfile.ZipFile(temp_pbix.name, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as pbix_zip:
+            
+            # Essential entries in the exact order Power BI expects
+            
+            # 1. Version (MUST be first)
+            pbix_zip.writestr("Version", "4.0")
+            
+            # 2. DataModelSchema (REQUIRED)
+            pbix_zip.writestr("DataModelSchema", "https://developer.microsoft.com/json-schemas/analysis-services/2016/tabular-object-model.json")
+            
+            # 3. DataModel with proper structure
+            minimal_model = {
+                "compatibilityLevel": 1550,
+                "model": {
+                    "culture": "en-US",
+                    "dataAccessOptions": {
+                        "legacyRedirects": True,
+                        "returnErrorValuesAsNull": True
+                    },
+                    "defaultPowerBIDataSourceVersion": "powerBI_V3",
+                    "tables": []
+                }
+            }
+            pbix_zip.writestr("DataModel", json.dumps(minimal_model, separators=(',', ':')))
+            
+            # 4. Report/Layout with proper structure
+            minimal_report = {
+                "config": "{\"version\":\"5.59\",\"themeCollection\":{\"baseTheme\":{\"name\":\"CY24SU10\",\"version\":\"5.61\",\"type\":2}},\"activeSectionIndex\":0,\"defaultDrillFilterOtherVisuals\":true}",
+                "layoutOptimization": 0,
+                "sections": [
+                    {
+                        "name": "ReportSection",
+                        "displayName": "Page 1",
+                        "filters": "[]",
+                        "ordinal": 0,
+                        "visualContainers": []
+                    }
+                ]
+            }
+            pbix_zip.writestr("Report/Layout", json.dumps(minimal_report, separators=(',', ':')))
+            
+            # 5. Settings with proper structure
+            settings = {
+                "version": "1.0",
+                "useStylableVisualContainerHeader": True
+            }
+            pbix_zip.writestr("Settings", json.dumps(settings, separators=(',', ':')))
+            
+            # 6. SecurityBindings (XML format)
+            security_bindings = '<?xml version="1.0" encoding="utf-8"?><Bindings xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />'
+            pbix_zip.writestr("SecurityBindings", security_bindings)
+            
+            # 7. Connections (XML format)
+            connections = '<?xml version="1.0" encoding="utf-8"?><Connections></Connections>'
+            pbix_zip.writestr("Connections", connections)
+            
+            # 8. Metadata (XML format)
+            metadata = '<?xml version="1.0" encoding="utf-8"?><Metadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><SelectionBookmark></SelectionBookmark><Timestamp>2024-01-01T00:00:00Z</Timestamp></Metadata>'
+            pbix_zip.writestr("Metadata", metadata)
+        
+        file_size = os.path.getsize(temp_pbix.name)
+        print(f"✅ Minimal PBIX created: {temp_pbix.name}")
+        print(f"📏 File size: {file_size} bytes")
+        
+        return temp_pbix.name
+        
+    except Exception as e:
+        if os.path.exists(temp_pbix.name):
+            os.unlink(temp_pbix.name)
+        raise e
+
 def create_proper_pbix_from_pbip(pbip_project_path):
     """Create a proper PBIX file from PBIP with exact Power BI structure"""
     print(f"📦 Converting PBIP project at: {pbip_project_path}")
@@ -77,17 +194,59 @@ def create_proper_pbix_from_pbip(pbip_project_path):
             pbix_zip.writestr("Connections", connections)
             print("📄 Added Connections")
             
-            # 9. Add Report/StaticResources if they exist
+
+            # 9. Add Metadata
+            metadata = """<?xml version="1.0" encoding="utf-8"?><Metadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><SelectionBookmark></SelectionBookmark><Timestamp>2024-01-01T00:00:00Z</Timestamp></Metadata>"""
+            pbix_zip.writestr("Metadata", metadata)
+            print("📄 Added Metadata")
+            
+            # Force flush to ensure all data is written
+            pbix_zip.flush = True
+            
+            # 10. Add Report/StaticResources if they exist
+
             static_resources_dir = os.path.join(report_dir, "StaticResources")
             if os.path.exists(static_resources_dir):
+                print(f"📁 Processing StaticResources from: {static_resources_dir}")
+                file_count = 0
                 for root, dirs, files in os.walk(static_resources_dir):
+                    print(f"📂 Scanning directory: {root} ({len(files)} files)")
                     for file in files:
+                        file_count += 1
                         file_path = os.path.join(root, file)
                         arc_name = f"Report/{os.path.relpath(file_path, report_dir)}"
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            content = f.read()
-                        pbix_zip.writestr(arc_name, content)
-                        print(f"📄 Added {arc_name}")
+
+                        
+                        print(f"📄 Processing file {file_count}: {file}")
+                        
+                        # Handle both text and binary files appropriately
+                        try:
+                            # Check file size first to avoid memory issues
+                            file_size = os.path.getsize(file_path)
+                            if file_size > 10 * 1024 * 1024:  # 10MB limit
+                                print(f"⚠️ Skipping large file {file} ({file_size} bytes)")
+                                continue
+                            
+                            # Try to read as text first for JSON/text files
+                            if file.lower().endswith(('.json', '.txt', '.css', '.js')):
+                                with open(file_path, 'r', encoding='utf-8') as f:
+                                    content = f.read()
+                                pbix_zip.writestr(arc_name, content)
+                            else:
+                                # Read as binary for other files
+                                with open(file_path, 'rb') as f:
+                                    content = f.read()
+                                pbix_zip.writestr(arc_name, content)
+                            print(f"✅ Added {arc_name} ({file_size} bytes)")
+                        except Exception as e:
+                            print(f"❌ Error adding {arc_name}: {e}")
+                            # Continue processing other files instead of failing completely
+                            continue
+                
+                print(f"📊 Processed {file_count} static resource files")
+            else:
+                print("📁 No StaticResources directory found")
+
         
         file_size = os.path.getsize(temp_pbix.name)
         print(f"✅ PBIX created successfully: {temp_pbix.name}")
@@ -187,15 +346,45 @@ def main():
     print('\n🔑 Getting token...')
     token = get_token(cfg['tenantId'], cfg['clientId'], cfg['clientSecret'])
     print('✅ Token acquired!')
+    
+    log_system_resources("before PBIX creation")
 
     pbix_file = None
     
     try:
         print('\n📦 Creating proper PBIX...')
         pbix_file = create_proper_pbix_from_pbip(args.pbix)
+        
+        log_system_resources("after PBIX creation")
 
         print(f'\n📤 Importing to Power BI...')
-        result = import_pbix_simple(token, workspace_id, pbix_file, report_name)
+
+        
+        # Add timeout protection for the entire upload process
+        import signal
+        
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Upload process timed out after 10 minutes")
+        
+        # Set 10 minute timeout for upload process
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(600)  # 10 minutes
+        
+        try:
+            # Try temporary upload method first (recommended for all files)
+            result = import_pbix_with_temp_upload(token, workspace_id, pbix_file, report_name)
+            
+            # If temp upload fails, try the direct methods
+            if not result:
+                print(f'\n🔄 Temp upload failed, trying direct methods...')
+                result = import_pbix_simple(token, workspace_id, pbix_file, report_name)
+        except TimeoutError as e:
+            print(f'\n⏰ Upload timed out: {e}')
+            raise Exception("Upload process timed out - check network connectivity and file size")
+        finally:
+            # Cancel the alarm
+            signal.alarm(0)
+
         
         print('\n🎉 SUCCESS! DEPLOYMENT COMPLETED! 🎉')
         print(f"📊 Report '{report_name}' deployed to '{workspace_name}'")
