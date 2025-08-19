@@ -1,19 +1,23 @@
 import requests, json, time
-def get_workspace_id(access_token, workspace_id=None, workspace_name=None):
-    headers={'Authorization':f'Bearer {access_token}'}
-    url='https://api.powerbi.com/v1.0/myorg/groups'
-    r=requests.get(url, headers=headers)
-    r.raise_for_status()
-    groups=r.json().get('value',[])
+def get_workspace_id(token, workspace_id=None, workspace_name=None):
+    # ✅ If WorkspaceID is already provided, use it directly
     if workspace_id:
-        for g in groups:
-            if g.get('id')==workspace_id:
-                return workspace_id
-    if workspace_name:
-        for g in groups:
-            if g.get('name')==workspace_name:
-                return g.get('id')
-    raise Exception('Workspace not found')
+        print(f"Using provided WorkspaceID: {workspace_id}")
+        return workspace_id
+
+    # Otherwise, resolve by name
+    url = "https://api.powerbi.com/v1.0/myorg/groups"
+    headers = {"Authorization": f"Bearer {token}"}
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    workspaces = response.json().get("value", [])
+
+    for ws in workspaces:
+        if workspace_name and ws["name"].lower() == workspace_name.lower():
+            print(f"Resolved Workspace '{workspace_name}' to ID: {ws['id']}")
+            return ws["id"]
+
+    raise Exception(f"Workspace not found (Name: {workspace_name}, ID: {workspace_id})")
 
 def import_pbix(access_token, workspace_id, pbix_path, dataset_display_name):
     headers={'Authorization':f'Bearer {access_token}'}
