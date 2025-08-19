@@ -1,68 +1,51 @@
-name: CI-CD-PBIP-Deploy
-
 trigger: none
-  # branches:
-  #   include:
-  #     - CICDSetup
-  #     - main
 
 stages:
 - stage: Build
-  displayName: Build PBIX
+  displayName: "Build Stage"
   jobs:
-  - job: Build
+  - job: BuildJob
+    displayName: "Build the project"
     pool:
-      vmImage: 'windows-latest'
+      vmImage: 'ubuntu-latest'
     steps:
-    - checkout: self
-    - script: |
-        dotnet --info || true
-        dotnet tool install -g pbi-tools -v q || true
-        export PATH="$PATH:$HOME/.dotnet/tools"
-        echo "Building PBIX from PBIP..."
-        mkdir -p $(Build.ArtifactStagingDirectory)
-        pbi-tools build "reports/Visa/TestYateet/Demo Report" -o "$(Build.ArtifactStagingDirectory)/Demo_Report.pbix" || true
-      displayName: 'Install pbi-tools and build PBIX'
-    - publish: $(Build.ArtifactStagingDirectory)
-      artifact: drop
+      - task: UsePythonVersion@0
+        inputs:
+          versionSpec: '3.x'
+      
+      - script: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+        displayName: "Install dependencies"
 
-- stage: Deploy
-  displayName: Deploy to Fabric Workspaces
+      - script: |
+          python main.py
+        displayName: "Run main orchestrator"
+
+- stage: DeployDev
+  displayName: "Deploy to Dev"
   dependsOn: Build
   jobs:
-  - deployment: DeployDev
-    displayName: Deploy to Dev
-    environment: Dev
-    pool:
-      vmImage: 'ubuntu-latest'
+  - deployment: DeployDevJob
+    displayName: "Deploy to Dev Environment"
+    environment: 'Dev'
     strategy:
       runOnce:
         deploy:
           steps:
-          - download: current
-            artifact: drop
-          - task: UsePythonVersion@0
-            inputs:
-              versionSpec: '3.9'
-          - script: |
-              python3 -m pip install --upgrade pip requests
-              python3 scripts/main.py --env dev --pbix "$(Pipeline.Workspace)/drop/Demo_Report.pbix"
-            displayName: 'Run deployment script (Dev)'
-  - deployment: DeployProd
-    displayName: Deploy to Prod
-    environment: Prod
-    pool:
-      vmImage: 'ubuntu-latest'
+            - script: echo "Deploying to Dev Environment"
+              displayName: "Deploy step"
+
+- stage: DeployProd
+  displayName: "Deploy to Prod"
+  dependsOn: DeployDev
+  jobs:
+  - deployment: DeployProdJob
+    displayName: "Deploy to Prod Environment"
+    environment: 'Prod'
     strategy:
       runOnce:
         deploy:
           steps:
-          - download: current
-            artifact: drop
-          - task: UsePythonVersion@0
-            inputs:
-              versionSpec: '3.9'
-          - script: |
-              python3 -m pip install --upgrade pip requests
-              python3 scripts/main.py --env prod --pbix "$(Pipeline.Workspace)/drop/Demo_Report.pbix"
-            displayName: 'Run deployment script (Prod)'
+            - script: echo "Deploying to Prod Environment"
+              displayName: "Deploy step"
