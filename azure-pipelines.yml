@@ -1,51 +1,32 @@
 trigger: none
 
+pool:
+  vmImage: 'ubuntu-latest'
+
+parameters:
+- name: targetEnv
+  displayName: "Target Environment"
+  type: string
+  default: "dev"
+  values:
+  - dev
+  - prod
+
 stages:
-- stage: Build
-  displayName: "Build Stage"
+- stage: Deploy
+  displayName: "Deploy PBIP Report"
   jobs:
-  - job: BuildJob
-    displayName: "Build the project"
-    pool:
-      vmImage: 'ubuntu-latest'
+  - job: DeployJob
     steps:
-      - task: UsePythonVersion@0
-        inputs:
-          versionSpec: '3.x'
-      
-      - script: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-        displayName: "Install dependencies"
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.10'
+        addToPath: true
 
-      - script: |
-          python main.py
-        displayName: "Run main orchestrator"
+    - script: |
+        pip install requests
+      displayName: 'Install dependencies'
 
-- stage: DeployDev
-  displayName: "Deploy to Dev"
-  dependsOn: Build
-  jobs:
-  - deployment: DeployDevJob
-    displayName: "Deploy to Dev Environment"
-    environment: 'Dev'
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-            - script: echo "Deploying to Dev Environment"
-              displayName: "Deploy step"
-
-- stage: DeployProd
-  displayName: "Deploy to Prod"
-  dependsOn: DeployDev
-  jobs:
-  - deployment: DeployProdJob
-    displayName: "Deploy to Prod Environment"
-    environment: 'Prod'
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-            - script: echo "Deploying to Prod Environment"
-              displayName: "Deploy step"
+    - script: |
+        python main.py --env ${{ parameters.targetEnv }} --pbix "$(Build.SourcesDirectory)/DemoReport.pbix"
+      displayName: 'Deploy PBIP Report'
