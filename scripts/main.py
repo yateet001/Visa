@@ -593,13 +593,8 @@ def main():
         signal.alarm(600)  # 10 minutes
         
         try:
-            # Try temporary upload method first (recommended for all files)
-            result = import_pbix_with_temp_upload(token, workspace_id, pbix_file, report_name)
-            
-            # If temp upload fails, try the direct methods
-            if not result:
-                print(f'\n🔄 Temp upload failed, trying direct methods...')
-                result = import_pbix_simple(token, workspace_id, pbix_file, report_name)
+            # Use the direct upload method (more reliable for now)
+            result = import_pbix_simple(token, workspace_id, pbix_file, report_name)
         except TimeoutError as e:
             print(f'\n⏰ Upload timed out: {e}')
             raise Exception("Upload process timed out - check network connectivity and file size")
