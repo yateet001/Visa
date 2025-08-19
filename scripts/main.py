@@ -15,7 +15,8 @@ def main():
 
     tenant=cfg['tenantId']; client=cfg['clientId']; secret=cfg['clientSecret']
     workspace_id=cfg.get('workspaceId'); workspace_name=cfg.get('workspaceName')
-    dw_conn=cfg['dataWarehouse']['connection']; dw_name=cfg['dataWarehouse']['name']
+    # Fix: Use the correct property names from your config files
+    dw_conn=cfg['warehouseConnection']; dw_name=cfg['warehouseName']
     report_name=cfg.get('reportName','Demo Report')
 
     print('Acquiring token...')
