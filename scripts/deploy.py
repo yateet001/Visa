@@ -66,16 +66,16 @@ def build_update_requests(datasources, dw_connection, dw_name, username=None, pa
         selector['datasourceType']=ds.get('datasourceType')
         conn_details={}
         conn_details['connectionString']=f'powerbi://{dw_connection};Initial Catalog={dw_name}'
-        cred=None
+        # Only include credentialDetails if credentials are provided
+        update_detail={
+            'datasourceSelector': selector,
+            'connectionDetails': conn_details
+        }
         if username and password:
-            cred={
+            update_detail['credentialDetails']={
                 'credentialType':'Basic',
                 'basicCredentials':{'username':username,'password':password},
                 'credentialsEncrypted':False
             }
-        updates.append({
-            'datasourceSelector': selector,
-            'connectionDetails': conn_details,
-            'credentialDetails': cred
-        })
+        updates.append(update_detail)
     return updates
