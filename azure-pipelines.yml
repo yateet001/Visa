@@ -1,0 +1,68 @@
+name: CI-CD-PBIP-Deploy
+
+trigger: none
+  # branches:
+  #   include:
+  #     - CICDSetup
+  #     - main
+
+stages:
+- stage: Build
+  displayName: Build PBIX
+  jobs:
+  - job: Build
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - checkout: self
+    - script: |
+        dotnet --info || true
+        dotnet tool install -g pbi-tools -v q || true
+        export PATH="$PATH:$HOME/.dotnet/tools"
+        echo "Building PBIX from PBIP..."
+        mkdir -p $(Build.ArtifactStagingDirectory)
+        pbi-tools build "reports/Visa/TestYateet/Demo Report" -o "$(Build.ArtifactStagingDirectory)/Demo_Report.pbix" || true
+      displayName: 'Install pbi-tools and build PBIX'
+    - publish: $(Build.ArtifactStagingDirectory)
+      artifact: drop
+
+- stage: Deploy
+  displayName: Deploy to Fabric Workspaces
+  dependsOn: Build
+  jobs:
+  - deployment: DeployDev
+    displayName: Deploy to Dev
+    environment: Dev
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '3.9'
+          - script: |
+              python3 -m pip install --upgrade pip requests
+              python3 scripts/main.py --env dev --pbix "$(Pipeline.Workspace)/drop/Demo_Report.pbix"
+            displayName: 'Run deployment script (Dev)'
+  - deployment: DeployProd
+    displayName: Deploy to Prod
+    environment: Prod
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '3.9'
+          - script: |
+              python3 -m pip install --upgrade pip requests
+              python3 scripts/main.py --env prod --pbix "$(Pipeline.Workspace)/drop/Demo_Report.pbix"
+            displayName: 'Run deployment script (Prod)'
