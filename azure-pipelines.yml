@@ -12,14 +12,14 @@ parameters:
   - dev
   - prod
 
-- name: pbipPath
-  displayName: "Path to PBIP Report"
+- name: pbixPath
+  displayName: "Path to PBIX Report"
   type: string
-  default: "Demo Report/Demo Report.pbip"  # Corrected path
+  default: "Demo Report/Demo Report.pbix"  # Change to .pbix file
 
 stages:
 - stage: Deploy
-  displayName: "Deploy PBIP Report"
+  displayName: "Deploy PBIX Report"
   jobs:
   - job: DeployJob
     steps:
@@ -33,5 +33,5 @@ stages:
       displayName: 'Install dependencies'
 
     - script: |
-        python scripts/main.py --env ${{ parameters.targetEnv }} --pbip "$(Build.SourcesDirectory)/${{ parameters.pbipPath }}"
-      displayName: 'Deploy PBIP Report'
+        python scripts/main.py --env ${{ parameters.targetEnv }} --pbix "$(Build.SourcesDirectory)/${{ parameters.pbixPath }}"
+      displayName: 'Deploy PBIX Report'
