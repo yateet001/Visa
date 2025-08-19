@@ -2,6 +2,7 @@
 import argparse, json, os, sys, tempfile, zipfile, requests, time
 from auth import get_token
 
+
 def log_system_resources(context=""):
     """Log current system resource usage"""
     try:
@@ -145,7 +146,7 @@ def create_proper_pbix_from_pbip(pbip_project_path):
     temp_pbix.close()
     
     try:
-        with zipfile.ZipFile(temp_pbix.name, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as pbix_zip:
+        with zipfile.ZipFile(temp_pbix.name, 'w', zipfile.ZIP_DEFLATED) as pbix_zip:
             
             # 1. Add Version (REQUIRED - must be first)
             pbix_zip.writestr("Version", "4.0")
@@ -160,54 +161,40 @@ def create_proper_pbix_from_pbip(pbip_project_path):
             if os.path.exists(report_json_path):
                 with open(report_json_path, 'r', encoding='utf-8') as f:
                     report_content = f.read()
-                # Ensure the JSON is properly formatted and not corrupted
-                try:
-                    json.loads(report_content)  # Validate JSON
-                    pbix_zip.writestr("Report/Layout", report_content)
-                    print("📄 Added Report/Layout")
-                except json.JSONDecodeError as e:
-                    raise Exception(f"Invalid JSON in report.json: {e}")
+                pbix_zip.writestr("Report/Layout", report_content)
+                print("📄 Added Report/Layout")
             
             # 4. Add DataModel from model.bim
             model_bim_path = os.path.join(model_dir, "model.bim")
             if os.path.exists(model_bim_path):
                 with open(model_bim_path, 'r', encoding='utf-8') as f:
                     model_content = f.read()
-                # Validate JSON structure
-                try:
-                    json.loads(model_content)  # Validate JSON
-                    pbix_zip.writestr("DataModel", model_content)
-                    print("📄 Added DataModel")
-                except json.JSONDecodeError as e:
-                    raise Exception(f"Invalid JSON in model.bim: {e}")
+                pbix_zip.writestr("DataModel", model_content)
+                print("📄 Added DataModel")
             
             # 5. Add DiagramLayout
             diagram_path = os.path.join(model_dir, "diagramLayout.json") 
             if os.path.exists(diagram_path):
                 with open(diagram_path, 'r', encoding='utf-8') as f:
                     diagram_content = f.read()
-                try:
-                    json.loads(diagram_content)  # Validate JSON
-                    pbix_zip.writestr("DiagramLayout", diagram_content)
-                    print("📄 Added DiagramLayout")
-                except json.JSONDecodeError as e:
-                    print(f"⚠️ Warning: Invalid JSON in diagramLayout.json: {e}")
+                pbix_zip.writestr("DiagramLayout", diagram_content)
+                print("📄 Added DiagramLayout")
             
             # 6. Add Settings
-            settings_content = '{"version":"1.0","useStylableVisualContainerHeader":true}'
-            pbix_zip.writestr("Settings", settings_content)
+            pbix_zip.writestr("Settings", '{"version":"1.0"}')
             print("📄 Added Settings")
             
             # 7. Add SecurityBindings
-            security_bindings = """<?xml version="1.0" encoding="utf-8"?><Bindings xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />"""
+            security_bindings = """<Bindings xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />"""
             pbix_zip.writestr("SecurityBindings", security_bindings)
             print("📄 Added SecurityBindings")
             
             # 8. Add Connections (if needed)
-            connections = """<?xml version="1.0" encoding="utf-8"?><Connections></Connections>"""
+            connections = """<?xml version="1.0" encoding="utf-8"?><Connections><Connection></Connection></Connections>"""
             pbix_zip.writestr("Connections", connections)
             print("📄 Added Connections")
             
+
             # 9. Add Metadata
             metadata = """<?xml version="1.0" encoding="utf-8"?><Metadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><SelectionBookmark></SelectionBookmark><Timestamp>2024-01-01T00:00:00Z</Timestamp></Metadata>"""
             pbix_zip.writestr("Metadata", metadata)
@@ -217,7 +204,7 @@ def create_proper_pbix_from_pbip(pbip_project_path):
             # Force flush to ensure all data is written
             pbix_zip.flush = True
             
-            # 10. Add Report/StaticResources if they exist (with timeout protection)
+
             static_resources_dir = os.path.join(report_dir, "StaticResources")
             print(f"📁 Checking for StaticResources at: {static_resources_dir}")
             sys.stdout.flush()
@@ -228,6 +215,7 @@ def create_proper_pbix_from_pbip(pbip_project_path):
                 raise TimeoutError("StaticResources processing timeout")
             
             if os.path.exists(static_resources_dir):
+
                 print(f"📁 Found StaticResources directory, processing with timeout...")
                 sys.stdout.flush()
                 
@@ -242,6 +230,8 @@ def create_proper_pbix_from_pbip(pbip_project_path):
                     for root, dirs, files in os.walk(static_resources_dir):
                         print(f"📂 Scanning directory: {root} ({len(files)} files)")
                         sys.stdout.flush()
+
+
                         
                         for file in files[:max_files]:  # Only process first N files
                             file_count += 1
@@ -294,7 +284,7 @@ def create_proper_pbix_from_pbip(pbip_project_path):
                     signal.alarm(0)  # Cancel timeout
             else:
                 print("📁 No StaticResources directory found")
-                sys.stdout.flush()
+
         
         file_size = os.path.getsize(temp_pbix.name)
         print(f"✅ PBIX created successfully: {temp_pbix.name}")
@@ -307,12 +297,6 @@ def create_proper_pbix_from_pbip(pbip_project_path):
                 print(f"📋 PBIX contains {len(file_list)} files:")
                 for f in file_list:
                     print(f"  - {f}")
-                # Test that we can read all entries
-                for entry in file_list:
-                    try:
-                        test_zip.read(entry)
-                    except Exception as e:
-                        raise Exception(f"Cannot read zip entry {entry}: {e}")
         except Exception as e:
             raise Exception(f"Created invalid zip file: {e}")
         
@@ -323,217 +307,57 @@ def create_proper_pbix_from_pbip(pbip_project_path):
             os.unlink(temp_pbix.name)
         raise e
 
-def import_pbix_with_temp_upload(token, workspace_id, pbix_path, dataset_display_name):
-    """Import PBIX using temporary upload location method"""
-    print(f"📤 Using temporary upload location method...")
-    print(f"📤 File: {pbix_path}")
-    print(f"📤 File size: {os.path.getsize(pbix_path)} bytes")
-    
-    headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
-    
-    # Step 1: Create temporary upload location
-    temp_upload_url = f'https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/imports/createTemporaryUploadLocation'
-    print(f"🔄 Step 1: Creating temporary upload location...")
-    
-    temp_response = requests.post(temp_upload_url, headers=headers, timeout=60)
-    print(f"📤 Temp upload response: {temp_response.status_code}")
-    
-    if temp_response.status_code not in (200, 201):
-        print(f"❌ Failed to create temp upload location: {temp_response.text}")
-        return None
-    
-    temp_data = temp_response.json()
-    upload_url = temp_data.get('url')
-    
-    if not upload_url:
-        print(f"❌ No upload URL in response: {temp_data}")
-        return None
-    
-    print(f"✅ Temporary upload URL created: {upload_url[:50]}...")
-    
-    # Step 2: Upload file to temporary location
-    print(f"🔄 Step 2: Uploading file to temporary location...")
-    
-    with open(pbix_path, 'rb') as file_handle:
-        file_data = file_handle.read()
-    
-    upload_headers = {
-        'Content-Type': 'application/octet-stream',
-        'x-ms-blob-type': 'BlockBlob'
-    }
-    
-    # Use PUT for Azure Blob Storage upload (not POST)
-    upload_response = requests.put(upload_url, headers=upload_headers, data=file_data, timeout=600)
-    print(f"📤 File upload response: {upload_response.status_code}")
-    
-    if upload_response.status_code not in (200, 201):
-        print(f"❌ Failed to upload file: {upload_response.text}")
-        return None
-    
-    print(f"✅ File uploaded successfully")
-    
-    # Step 3: Import from uploaded location
-    print(f"🔄 Step 3: Importing from uploaded location...")
-    
-    import_url = f'https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/imports'
-    import_headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
-    
-    import_data = {
-        'fileUrl': upload_url,
-        'datasetDisplayName': dataset_display_name,
-        'nameConflict': 'CreateOrOverwrite'
-    }
-    
-    import_response = requests.post(import_url, headers=import_headers, json=import_data, timeout=600)
-    print(f"📤 Import response: {import_response.status_code}")
-    
-    if import_response.status_code in (200, 201, 202):
-        result = import_response.json() if import_response.content else {"status": "success"}
-        print(f"✅ Import successful: {result}")
-        return result
-    else:
-        print(f"❌ Import failed: {import_response.text}")
-        return None
-
 def import_pbix_simple(token, workspace_id, pbix_path, dataset_display_name):
-    """Simple PBIX import with proper file handling based on Power BI API best practices"""
-    print(f"📤 Uploading to Power BI...")
+    """Simple PBIX import without extra parameters"""
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'multipart/form-data'
+    }
+    
+    # Use simpler URL without extra parameters
+    url = f'https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/imports'
+    
+    print(f"📤 Uploading to: {url}")
     print(f"📤 File: {pbix_path}")
     print(f"📤 File size: {os.path.getsize(pbix_path)} bytes")
     
-    # Verify file exists and is readable
-    if not os.path.exists(pbix_path):
-        raise FileNotFoundError(f"PBIX file not found: {pbix_path}")
-    
-    if os.path.getsize(pbix_path) == 0:
-        raise Exception("PBIX file is empty")
-    
-    # Test that the file is a valid ZIP
-    try:
-        with zipfile.ZipFile(pbix_path, 'r') as test_zip:
-            test_zip.testzip()
-    except Exception as e:
-        raise Exception(f"PBIX file is corrupted or not a valid ZIP: {e}")
-    
+    # Remove Content-Type to let requests set it automatically for multipart
     headers = {'Authorization': f'Bearer {token}'}
     
-    # First, test the token by getting workspace info
-    print("🔍 Validating token and workspace access...")
-    try:
-        workspace_url = f'https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}'
-        workspace_response = requests.get(workspace_url, headers=headers, timeout=30)
-        print(f"📋 Workspace access test: {workspace_response.status_code}")
-        if workspace_response.status_code == 200:
-            workspace_info = workspace_response.json()
-            print(f"✅ Workspace accessible: {workspace_info.get('name', 'Unknown')}")
-        elif workspace_response.status_code == 403:
-            print("⚠️ Warning: Access forbidden - service principal may need admin permissions")
-        else:
-            print(f"⚠️ Warning: Workspace access issue: {workspace_response.text}")
-    except Exception as e:
-        print(f"⚠️ Warning: Could not validate workspace access: {e}")
-    
-    # Method 1: Direct binary upload (recommended approach)
-    print("🔄 Method 1: Direct binary upload...")
-    # URL encode the dataset name to handle spaces and special characters
-    import urllib.parse
-    encoded_dataset_name = urllib.parse.quote(dataset_display_name)
-    url = f'https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/imports?datasetDisplayName={encoded_dataset_name}&nameConflict=CreateOrOverwrite'
-    print(f"📤 Uploading to: {url}")
-    
-    try:
-        # Read file as binary data
-        with open(pbix_path, 'rb') as file_handle:
-            file_data = file_handle.read()
-        
-        # Set proper headers for binary upload
-        upload_headers = {
-            'Authorization': f'Bearer {token}',
-            'Content-Type': 'application/octet-stream'
+    with open(pbix_path, 'rb') as f:
+        files = {
+            'file': (f'{dataset_display_name}.pbix', f, 'application/octet-stream')
+        }
+        data = {
+            'datasetDisplayName': dataset_display_name,
+            'nameConflict': 'CreateOrOverwrite'
         }
         
-        print(f"🔍 Debug info:")
-        print(f"  - Dataset name: '{dataset_display_name}'")
-        print(f"  - Name conflict: 'CreateOrOverwrite'")
-        print(f"  - Content-Type: application/octet-stream")
-        print(f"  - Data size: {len(file_data)} bytes")
-        
-        response = requests.post(
-            url, 
-            headers=upload_headers, 
-            data=file_data,
-            timeout=600
-        )
-        
-        print(f"📤 Response: {response.status_code}")
-        
-        if response.status_code in (200, 201, 202):
-            result = response.json() if response.content else {"status": "success"}
-            print(f"✅ Upload successful: {result}")
-            return result
-        else:
-            print(f"❌ Method 1 failed: {response.text}")
-            
-            # Method 2: Multipart form data upload
-            print("🔄 Method 2: Multipart form data upload...")
-            url2 = f'https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/imports'
-            
-            # Sanitize the filename to avoid issues with special characters
-            safe_filename = dataset_display_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
-            
-            with open(pbix_path, 'rb') as file_handle:
-                files = {
-                    'file': (f'{safe_filename}.pbix', file_handle, 'application/octet-stream')
-                }
-                data = {
-                    'datasetDisplayName': dataset_display_name,
-                    'nameConflict': 'CreateOrOverwrite'
-                }
-                
-                response2 = requests.post(
-                    url2, 
-                    headers=headers,  # Only Authorization header for multipart
-                    files=files, 
-                    data=data, 
-                    timeout=600
-                )
-            
-            print(f"📤 Method 2 response: {response2.status_code}")
-            
-            if response2.status_code in (200, 201, 202):
-                result = response2.json() if response2.content else {"status": "success"}
-                print(f"✅ Method 2 successful: {result}")
-                return result
-            else:
-                print(f"❌ Method 2 failed: {response2.text}")
-                
-                # Method 3: Try with minimal parameters
-                print("🔄 Method 3: Minimal parameter upload...")
-                url3 = f'https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/imports?nameConflict=CreateOrOverwrite'
-                
-                with open(pbix_path, 'rb') as file_handle:
-                    files3 = {
-                        'file': ('report.pbix', file_handle, 'application/octet-stream')
-                    }
-                    response3 = requests.post(url3, headers=headers, files=files3, timeout=600)
-                
-                print(f"📤 Method 3 response: {response3.status_code}")
-                
-                if response3.status_code in (200, 201, 202):
-                    result = response3.json() if response3.content else {"status": "success"}
-                    print(f"✅ Method 3 successful: {result}")
-                    return result
-                else:
-                    print(f"❌ Method 3 failed: {response3.text}")
-                    
-                    # All methods failed
-                    raise Exception(f'All import methods failed. Last errors:\n'
-                                  f'Method 1 (Binary): {response.status_code} {response.text}\n'
-                                  f'Method 2 (Multipart): {response2.status_code} {response2.text}\n'
-                                  f'Method 3 (Minimal): {response3.status_code} {response3.text}')
+        response = requests.post(url, headers=headers, files=files, data=data, timeout=600)
     
-    except requests.exceptions.RequestException as e:
-        raise Exception(f'Network error during upload: {str(e)}')
+    print(f"📤 Response: {response.status_code}")
+    
+    if response.status_code not in (200, 201, 202):
+        print(f"❌ Failed: {response.text}")
+        
+        # Try alternative approach - direct upload
+        print("🔄 Trying alternative upload method...")
+        url2 = f'https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/imports?datasetDisplayName={dataset_display_name}&nameConflict=Overwrite'
+        
+        with open(pbix_path, 'rb') as f:
+            files2 = {'file': f}
+            response2 = requests.post(url2, headers=headers, files=files2, timeout=600)
+        
+        print(f"📤 Alternative response: {response2.status_code}")
+        if response2.status_code not in (200, 201, 202):
+            print(f"❌ Alternative failed: {response2.text}")
+            raise Exception(f'Both import methods failed. Last error: {response2.status_code} {response2.text}')
+        else:
+            response = response2
+    
+    result = response.json() if response.content else {"status": "success"}
+    print(f"✅ Upload successful: {result}")
+    return result
 
 def main():
     p = argparse.ArgumentParser()
@@ -566,21 +390,13 @@ def main():
     pbix_file = None
     
     try:
-        # Validate PBIP structure first
-        if args.pbix.endswith('.pbip'):
-            project_dir = os.path.dirname(args.pbix)
-        else:
-            project_dir = args.pbix
-            
-        if not validate_pbip_structure(project_dir):
-            raise Exception("PBIP project structure validation failed. Missing required files.")
-        
         print('\n📦 Creating proper PBIX...')
         pbix_file = create_proper_pbix_from_pbip(args.pbix)
         
         log_system_resources("after PBIX creation")
 
         print(f'\n📤 Importing to Power BI...')
+
         
         # Add timeout protection for the entire upload process
         import signal
@@ -601,29 +417,14 @@ def main():
         finally:
             # Cancel the alarm
             signal.alarm(0)
+
         
         print('\n🎉 SUCCESS! DEPLOYMENT COMPLETED! 🎉')
         print(f"📊 Report '{report_name}' deployed to '{workspace_name}'")
         print(f"🔗 Check your Power BI workspace: {workspace_name}")
-        if 'id' in result:
-            print(f"📋 Import ID: {result['id']}")
 
     except Exception as e:
         print(f'\n❌ Error: {str(e)}')
-        # Print more diagnostic information
-        if pbix_file and os.path.exists(pbix_file):
-            try:
-                print(f"🔍 PBIX file details:")
-                print(f"  - Path: {pbix_file}")
-                print(f"  - Size: {os.path.getsize(pbix_file)} bytes")
-                with zipfile.ZipFile(pbix_file, 'r') as z:
-                    print(f"  - ZIP entries: {len(z.namelist())}")
-                    for entry in z.namelist()[:10]:  # Show first 10 entries
-                        print(f"    - {entry}")
-                    if len(z.namelist()) > 10:
-                        print(f"    - ... and {len(z.namelist()) - 10} more")
-            except Exception as debug_e:
-                print(f"  - Could not read PBIX details: {debug_e}")
         sys.exit(1)
     finally:
         if pbix_file and os.path.exists(pbix_file):
