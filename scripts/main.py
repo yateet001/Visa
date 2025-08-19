@@ -212,51 +212,89 @@ def create_proper_pbix_from_pbip(pbip_project_path):
             metadata = """<?xml version="1.0" encoding="utf-8"?><Metadata xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><SelectionBookmark></SelectionBookmark><Timestamp>2024-01-01T00:00:00Z</Timestamp></Metadata>"""
             pbix_zip.writestr("Metadata", metadata)
             print("📄 Added Metadata")
+            sys.stdout.flush()
             
             # Force flush to ensure all data is written
             pbix_zip.flush = True
             
-            # 10. Add Report/StaticResources if they exist
+            # 10. Add Report/StaticResources if they exist (with timeout protection)
             static_resources_dir = os.path.join(report_dir, "StaticResources")
+            print(f"📁 Checking for StaticResources at: {static_resources_dir}")
+            sys.stdout.flush()
+            
+            # Add overall timeout for StaticResources processing
+            import signal
+            def static_resources_timeout_handler(signum, frame):
+                raise TimeoutError("StaticResources processing timeout")
+            
             if os.path.exists(static_resources_dir):
-                print(f"📁 Processing StaticResources from: {static_resources_dir}")
-                file_count = 0
-                for root, dirs, files in os.walk(static_resources_dir):
-                    print(f"📂 Scanning directory: {root} ({len(files)} files)")
-                    for file in files:
-                        file_count += 1
-                        file_path = os.path.join(root, file)
-                        arc_name = f"Report/{os.path.relpath(file_path, report_dir)}"
-                        
-                        print(f"📄 Processing file {file_count}: {file}")
-                        
-                        # Handle both text and binary files appropriately
-                        try:
-                            # Check file size first to avoid memory issues
-                            file_size = os.path.getsize(file_path)
-                            if file_size > 10 * 1024 * 1024:  # 10MB limit
-                                print(f"⚠️ Skipping large file {file} ({file_size} bytes)")
-                                continue
-                            
-                            # Try to read as text first for JSON/text files
-                            if file.lower().endswith(('.json', '.txt', '.css', '.js')):
-                                with open(file_path, 'r', encoding='utf-8') as f:
-                                    content = f.read()
-                                pbix_zip.writestr(arc_name, content)
-                            else:
-                                # Read as binary for other files
-                                with open(file_path, 'rb') as f:
-                                    content = f.read()
-                                pbix_zip.writestr(arc_name, content)
-                            print(f"✅ Added {arc_name} ({file_size} bytes)")
-                        except Exception as e:
-                            print(f"❌ Error adding {arc_name}: {e}")
-                            # Continue processing other files instead of failing completely
-                            continue
+                print(f"📁 Found StaticResources directory, processing with timeout...")
+                sys.stdout.flush()
                 
-                print(f"📊 Processed {file_count} static resource files")
+                # Set 60 second timeout for entire StaticResources processing
+                signal.signal(signal.SIGALRM, static_resources_timeout_handler)
+                signal.alarm(60)
+                
+                try:
+                    file_count = 0
+                    max_files = 20  # Reduced limit to prevent hanging
+                    
+                    for root, dirs, files in os.walk(static_resources_dir):
+                        print(f"📂 Scanning directory: {root} ({len(files)} files)")
+                        sys.stdout.flush()
+                        
+                        for file in files[:max_files]:  # Only process first N files
+                            file_count += 1
+                            file_path = os.path.join(root, file)
+                            arc_name = f"Report/{os.path.relpath(file_path, report_dir)}"
+                            
+                            print(f"📄 Processing file {file_count}: {file}")
+                            sys.stdout.flush()
+                            
+                            try:
+                                # Check file size first
+                                file_size = os.path.getsize(file_path)
+                                if file_size > 1024 * 1024:  # 1MB limit (very conservative)
+                                    print(f"⚠️ Skipping large file {file} ({file_size} bytes)")
+                                    sys.stdout.flush()
+                                    continue
+                                
+                                # Simple file processing without nested timeouts
+                                if file.lower().endswith(('.json', '.txt', '.css', '.js')):
+                                    with open(file_path, 'r', encoding='utf-8') as f:
+                                        content = f.read()
+                                    pbix_zip.writestr(arc_name, content)
+                                else:
+                                    with open(file_path, 'rb') as f:
+                                        content = f.read()
+                                    pbix_zip.writestr(arc_name, content)
+                                
+                                print(f"✅ Added {arc_name} ({file_size} bytes)")
+                                sys.stdout.flush()
+                                
+                            except Exception as e:
+                                print(f"❌ Error adding {file}: {e}")
+                                sys.stdout.flush()
+                                continue
+                        
+                        # Only process first directory to keep it simple
+                        break
+                    
+                    print(f"📊 Processed {file_count} static resource files")
+                    sys.stdout.flush()
+                    
+                except TimeoutError:
+                    print("⏰ StaticResources processing timed out, continuing without them...")
+                    sys.stdout.flush()
+                except Exception as e:
+                    print(f"⚠️ Error processing StaticResources: {e}")
+                    print("📁 Continuing without StaticResources...")
+                    sys.stdout.flush()
+                finally:
+                    signal.alarm(0)  # Cancel timeout
             else:
                 print("📁 No StaticResources directory found")
+                sys.stdout.flush()
         
         file_size = os.path.getsize(temp_pbix.name)
         print(f"✅ PBIX created successfully: {temp_pbix.name}")
