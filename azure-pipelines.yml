@@ -15,7 +15,7 @@ parameters:
 - name: pbipPath
   displayName: "Path to PBIP Report"
   type: string
-  default: "Demo Report/Demo Report.pbip"  # Corrected path
+  default: "Demo Report/Demo Report.pbip"
 
 stages:
 - stage: Deploy
@@ -32,6 +32,13 @@ stages:
         pip install requests
       displayName: 'Install dependencies'
 
+    # Install Power BI CLI (fabric-cli)
+    - script: |
+        pip install fabric-cli
+      displayName: 'Install Fabric CLI'
+
+    # Convert PBIP to PBIX using Power BI CLI (if available)
+    # Note: This requires authentication setup
     - script: |
         python scripts/main.py --env ${{ parameters.targetEnv }} --pbip "$(Build.SourcesDirectory)/${{ parameters.pbipPath }}"
       displayName: 'Deploy PBIP Report'
