@@ -23,14 +23,27 @@ stages:
   jobs:
   - job: DeployJob
     steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+        includePreviewVersions: true
+      displayName: 'Install .NET SDK'
+
+    - script: |
+        dotnet tool update -g pbi-tools || dotnet tool install -g pbi-tools
+        echo "##vso[task.prependpath]$HOME/.dotnet/tools"
+        pbi-tools --version
+      displayName: 'Install pbi-tools'
     - task: UsePythonVersion@0
       inputs:
         versionSpec: '3.10'
         addToPath: true
 
     - script: |
+        python3 -m pip install --upgrade pip
         pip install requests
-      displayName: 'Install dependencies'
+      displayName: 'Install Python dependencies'
 
     # Add debugging to see what files exist
     - script: |
@@ -43,4 +56,4 @@ stages:
 
     - script: |
         python scripts/main.py --env ${{ parameters.targetEnv }} --pbix "$(Build.SourcesDirectory)/${{ parameters.pbixPath }}"
-      displayName: 'Deploy PBIX Report'
+      displayName: 'Build and Deploy PBIX Report'
