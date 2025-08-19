@@ -1,0 +1,46 @@
+trigger: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+parameters:
+- name: targetEnv
+  displayName: "Target Environment"
+  type: string
+  default: "dev"
+  values:
+  - dev
+  - prod
+
+- name: pbixPath
+  displayName: "Path to PBIX Report"
+  type: string
+  default: "Demo Report"  # Just the folder name, script will handle the rest
+
+stages:
+- stage: Deploy
+  displayName: "Deploy PBIX Report"
+  jobs:
+  - job: DeployJob
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.10'
+        addToPath: true
+
+    - script: |
+        pip install requests
+      displayName: 'Install dependencies'
+
+    # Add debugging to see what files exist
+    - script: |
+        echo "Repository contents:"
+        ls -la "$(Build.SourcesDirectory)/"
+        echo ""
+        echo "Demo Report folder contents:"
+        ls -la "$(Build.SourcesDirectory)/Demo Report/" || echo "Demo Report folder not found"
+      displayName: 'Debug - List repository contents'
+
+    - script: |
+        python scripts/main.py --env ${{ parameters.targetEnv }} --pbix "$(Build.SourcesDirectory)/${{ parameters.pbixPath }}"
+      displayName: 'Deploy PBIX Report'

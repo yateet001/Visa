@@ -1,0 +1,11 @@
+{
+  "clientId": "dd3aa383-4d69-4854-8885-9e483ffb5b72",
+  "tenantId": "e4d98dd2-9199-42e5-ba8b-da3e763ede2e",
+  "clientSecret": "82H8Q~TuZnTU9XRytWpK46g.YP_QoTTUww-NWday",
+  "workspaceId": "23998419-5678-4044-a3bf-81e2d9d18d22",
+  "workspaceName": "FabricCICDDev",
+  "reportName": "Demo Report",
+  "reportLocation": "Demo Report",
+  "warehouseConnection": "2kg5tzezshsufoul3i7hmpw6fy-p75s3nd6m34urf6jcimyy4aobe.datawarehouse.fabric.microsoft.com",
+  "warehouseName": "WH_Sales"
+}
